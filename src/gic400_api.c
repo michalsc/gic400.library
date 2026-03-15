@@ -120,6 +120,20 @@ void DT_TranslateAddress(APTR DeviceTreeBase, APTR *address, APTR node)
     }
 }
 
+int _strncmp(const char *s1, const char *s2, ULONG n)
+{
+    if (n == 0) {
+        return 0;
+    }
+    while (*s1 == *s2++) {
+        if (--n == 0)
+            return 0;
+        if (*s1++ == '\0')
+            return 0;
+    }
+    return (*(const unsigned char *)s1 - *(const unsigned char *)(s2 - 1));
+}
+
 static int gic400_parse_devicetree(struct GIC_Base *gicBase)
 {
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
@@ -144,6 +158,16 @@ static int gic400_parse_devicetree(struct GIC_Base *gicBase)
     }
 
     CONST_STRPTR gic_compatible = DT_GetPropValue(DT_FindProperty(gic_key, (CONST_STRPTR) "compatible"));
+
+    // gic_compatible should begin with "arm,gic-400"
+    if (gic_compatible == NULL || _strncmp((const char *)gic_compatible, "arm,gic-400", 11) != 0)
+    {
+        Kprintf("[gic] %s: Incompatible GIC compatible string: %s\n", (ULONG)__func__, (ULONG)gic_compatible);
+        DT_CloseKey(gic_key);
+        DT_CloseKey(root_key);
+        return -GIC_ERROR;
+    }
+
     // TODO this is awful. rework DT_TranslateAddress
 
     const APTR parent_key = DT_GetParent(gic_key);
