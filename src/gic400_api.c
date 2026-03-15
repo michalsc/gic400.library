@@ -60,12 +60,16 @@ APTR DT_FindByPHandle(APTR DeviceTreeBase, APTR key, ULONG phandle)
     APTR child = NULL;
     APTR prop = DT_FindProperty(key, (CONST_STRPTR)"phandle");
 
-    if (key != NULL && *(ULONG*)DT_GetPropValue(prop) == phandle) {
+    if (prop != NULL && *(ULONG*)DT_GetPropValue(prop) == phandle) {
         return key;
     }
-
-    for (child = DT_GetChild(key, NULL); child != NULL; child = DT_GetChild(key, child)) {
-        DT_FindByPHandle(DeviceTreeBase, child, phandle);
+    else {
+        for (child = DT_GetChild(key, NULL); child != NULL; child = DT_GetChild(key, child)) {
+            APTR result = DT_FindByPHandle(DeviceTreeBase, child, phandle);
+            if (result != NULL) {
+                return result;
+            }
+        }
     }
 
     return NULL;
