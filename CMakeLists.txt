@@ -38,4 +38,5 @@ set_target_properties(gic400.library PROPERTIES LINK_DEPENDS ${CMAKE_CURRENT_SOU
 
 # no install for devicetree.resource itself, it goes to ROM
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/sfd DESTINATION Developer)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include DESTINATION Developer)
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include DESTINATION Developer)
