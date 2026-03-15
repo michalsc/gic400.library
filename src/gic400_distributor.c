@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-#include <gic400_private.h>
+#include "gic400_private.h"
 
 /* gicd_print_info: Log distributor ID and capability registers.
  * Args: none.
@@ -258,6 +258,6 @@ void gicd_set_trigger(struct GIC_Base *gicBase, ULONG irq, BOOL edge)
     BOOL is_edge = ((reg >> bit_offset) & 0x02) != 0;
     if (is_edge != edge)
     {
-        Kprintf("[gic] Failed to set GICD IRQ %lu trigger to %s\n", irq, edge ? "edge" : "level");
+        Kprintf("[gic] Failed to set GICD IRQ %lu trigger to %s\n", irq, edge ? (ULONG)"edge" : (ULONG)"level");
     }
 }

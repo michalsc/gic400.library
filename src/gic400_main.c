@@ -10,8 +10,7 @@
 #include <exec/execbase.h>
 #include <exec/resident.h>
 
-#include <gic400_private.h>
-#include <compat.h>
+#include "gic400_private.h"
 
 int __attribute__((used, no_reorder)) doNotExecute()
 {
@@ -36,10 +35,9 @@ const struct Resident gicResident __attribute__((used)) = {
     (APTR)initTable,
 };
 
-struct ExecBase *SysBase;
-
 static ULONG LibExpunge(struct GIC_Base *gicBase asm("a6"))
 {
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     ULONG segList = gicBase->segList;
 
     if (gicBase->libNode.lib_OpenCnt > 0)
@@ -63,8 +61,8 @@ static ULONG LibExpunge(struct GIC_Base *gicBase asm("a6"))
 
 struct Library *LibInit(struct Library *base asm("d0"), ULONG seglist asm("a0"), struct ExecBase *execBase asm("a6"))
 {
+    struct ExecBase *SysBase = execBase;
     struct GIC_Base *gicBase = (struct GIC_Base *)base;
-    SysBase = execBase;
 
     gicBase->segList = seglist;
     gicBase->libNode.lib_Revision = LIBRARY_REVISION;
@@ -72,7 +70,7 @@ struct Library *LibInit(struct Library *base asm("d0"), ULONG seglist asm("a0"),
     int res = gic400_init(gicBase);
     if (res != 0)
     {
-        Kprintf("[gic] %s: Failed to initialize GIC-400 library\n", __func__);
+        Kprintf("[gic] %s: Failed to initialize GIC-400 library\n", (ULONG)__func__);
         LibExpunge(gicBase);
         return NULL;
     }
@@ -141,3 +139,15 @@ static const APTR initTable[4] = {
     (APTR)funcTable,
     NULL,
     (APTR)LibInit};
+
+static void putch(UBYTE data asm("d0"), APTR ignore asm("a3"))
+{
+    (void)ignore;
+    *(UBYTE*)0xdeadbeef = data;
+}
+
+void _kprintf(const char * msg asm("a0"), void * args asm("a1"))
+{
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+    RawDoFmt((CONST_STRPTR)msg, args, (APTR)putch, NULL);
+}

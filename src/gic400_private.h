@@ -7,8 +7,6 @@
 #include <exec/semaphores.h>
 #include <exec/interrupts.h>
 #include <hardware/intbits.h>
-#include <debug.h>
-#include <compat.h>
 #include <libraries/gic400.h>
 
 #if defined(__INTELLISENSE__)
@@ -158,6 +156,24 @@ LONG GetControllerInfo(struct GICInfo *info asm("a1"), struct GIC_Base *gicBase 
 #define gicc_get_running_priority() (readl(GICC_RPR) & 0xFF)
 #define gicc_get_highest_pending() (readl(GICC_HPPIR) & 0x3FF)
 
+static inline ULONG LE32(ULONG x) { return __builtin_bswap32(x); }
+
+static inline void writel(ULONG value, volatile ULONG *addr) {
+    *addr = LE32(value);
+    asm volatile("nop");
+}
+
+static inline ULONG readl(volatile ULONG *addr) {
+    ULONG ret = LE32(*addr);
+    asm volatile("nop");
+    return ret;
+}
+
+void _kprintf(const char * msg asm("a0"), void * args asm("a1"));
+
+#define Kprintf(string, ...) \
+    do { ULONG args[] = {0, __VA_ARGS__}; _kprintf(string, &args[1]); } while(0)
+
 static inline void gicc_print_info(ULONG gicc_iidr)
 {
     Kprintf("[gic] Controller: Implementer=0x%03lx, Revision=%ld, Architecture=%ld, ProductID=0x%03lx\n",
@@ -170,7 +186,7 @@ static inline void gicc_print_info(ULONG gicc_iidr)
 static inline void gicc_log_ctlr(CONST_STRPTR label, ULONG ctlr)
 {
     Kprintf("[gic] %s GICC_CTLR=0x%08lx: enable_grp1=%ld, fiq_bypass_dis_grp1=%ld, irq_bypass_dis_grp1=%ld, eoi_mode_ns=%ld\n",
-            label,
+            (ULONG)label,
             ctlr,
             GICC_CTLR_FLAG(ctlr, GICC_CTLR_ENABLE_GRP1),
             GICC_CTLR_FLAG(ctlr, GICC_CTLR_FIQ_BYPASS_DIS_GRP1),

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
-#include <gic400_private.h>
-#include <devtree.h>
+#include "gic400_private.h"
+//#include <devtree.h>
 #include <exec/memory.h>
+#include <proto/exec.h>
+#include <proto/devicetree.h>
 
-extern struct ExecBase *SysBase;
-static char gic_dispatcher_name[] = "ARM GIC-400 dispatcher";
+static const char gic_dispatcher_name[] = "ARM GIC-400 dispatcher";
 
 static ULONG gic400_exec_dispatcher(register struct GIC_Base *gicBase asm("a1"));
 
@@ -12,42 +13,128 @@ static int gic400_validate_irq(struct GIC_Base *gicBase, ULONG irq)
 {
     if (!gicBase)
     {
-        Kprintf("[gic] %s: NULL GIC base\n", __func__);
+        Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__);
         return -GIC_ERROR;
     }
 
     if (gicBase->max_irqs == 0)
     {
-        Kprintf("[gic] %s: controller reports zero IRQs\n", __func__);
+        Kprintf("[gic] %s: controller reports zero IRQs\n", (ULONG)__func__);
         return -GIC_ERROR;
     }
 
     if (irq >= gicBase->max_irqs)
     {
-        Kprintf("[gic] %s: IRQ %lu is out of range (max %lu)\n", __func__, irq, gicBase->max_irqs);
+        Kprintf("[gic] %s: IRQ %lu is out of range (max %lu)\n", (ULONG)__func__, irq, gicBase->max_irqs);
         return -GIC_ERROR;
     }
 
     return 0;
 }
 
+/* 
+    Return property value as ULONG, returns default value if property not found (recursive or not, 
+    depending on check_parent) or if the property size is not large enough to hold ULONG
+*/
+ULONG DT_GetPropertyValueULONG(APTR DeviceTreeBase, APTR key, const char *propname, ULONG default_value, BOOL check_parent)
+{
+    APTR property = check_parent ? 
+        DT_FindPropertyRecursive(key, (CONST_STRPTR)propname) :
+        DT_FindProperty(key, (CONST_STRPTR)propname);
+    
+    if (property) {
+        if (DT_GetPropLen(property) >= 4) {
+            return *(ULONG*)DT_GetPropValue(property);
+        }
+    }
+
+    return default_value;
+}
+
+/*
+    Search key and its children based on phandle falue. If matching phandle found, the node is returned,
+    otherwise returns NULL
+*/
+APTR DT_FindByPHandle(APTR DeviceTreeBase, APTR key, ULONG phandle)
+{
+    APTR child = NULL;
+    APTR prop = DT_FindProperty(key, (CONST_STRPTR)"phandle");
+
+    if (key != NULL && *(ULONG*)DT_GetPropValue(prop) == phandle) {
+        return key;
+    }
+
+    for (child = DT_GetChild(key, NULL); child != NULL; child = DT_GetChild(key, child)) {
+        DT_FindByPHandle(DeviceTreeBase, child, phandle);
+    }
+
+    return NULL;
+}
+
+/*
+    Gets 64-bit number from the property based on the cells value - drains ULONG after ULONG 
+    as long as cells > 0
+*/
+unsigned long long DT_GetNumber(const ULONG *ptr, ULONG cells)
+{
+    unsigned long long value = 0;
+
+    while(cells--) {
+        value = (value << 32) | *ptr++;
+    }
+
+    return value;
+}
+
+/*
+    Translate the address of the node
+*/
+void DT_TranslateAddress(APTR DeviceTreeBase, APTR *address, APTR node)
+{
+    APTR ranges_property = DT_FindProperty(node, (CONST_STRPTR) "ranges");
+    const ULONG *ranges = DT_GetPropValue(ranges_property);
+    const ULONG ranges_len = DT_GetPropLen(ranges_property);
+
+    const ULONG address_cells_parent = DT_GetPropertyValueULONG(DeviceTreeBase, DT_GetParent(node), "#address-cells", 2, 0);
+    const ULONG address_cells_node = DT_GetPropertyValueULONG(DeviceTreeBase, node, "#address-cells", 2, 0);
+    const ULONG size_cells_node = DT_GetPropertyValueULONG(DeviceTreeBase, node, "#size-cells", 2, 0);
+    const ULONG cells_count = address_cells_parent + address_cells_node + size_cells_node;
+
+    for (const ULONG *r = ranges; r < ranges + ranges_len / 4; r += cells_count) {
+        const ULONG phys_vc4 = DT_GetNumber(r, address_cells_node);
+        const ULONG virt_cpu = DT_GetNumber(r + address_cells_node, address_cells_parent);
+        const ULONG size = DT_GetNumber(r + address_cells_node + address_cells_parent, size_cells_node);
+
+        if ((ULONG)*address >= phys_vc4 && (ULONG)*address <= phys_vc4 + size)
+        {
+            ULONG delta = virt_cpu - phys_vc4;
+            ULONG val = (ULONG)*address;
+            val += delta;
+            *address = (APTR)val;
+            return;
+        }
+    }
+}
+
 static int gic400_parse_devicetree(struct GIC_Base *gicBase)
 {
-    DT_Init();
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+
+    APTR DeviceTreeBase = OpenResource((CONST_STRPTR)"devicetree.resource");
 
     APTR root_key = DT_OpenKey((CONST_STRPTR) "/");
     if (root_key == NULL)
     {
-        Kprintf("[gic] %s: Failed to open root key\n", __func__);
+        Kprintf("[gic] %s: Failed to open root key\n", (ULONG)__func__);
         return -GIC_ERROR;
     }
 
-    const ULONG gic_phandle = DT_GetPropertyValueULONG(root_key, "interrupt-controller", 1, FALSE);
+    const ULONG gic_phandle = DT_GetPropertyValueULONG(DeviceTreeBase, root_key, "interrupt-controller", 1, FALSE);
 
-    APTR gic_key = DT_FindByPHandle(root_key, gic_phandle);
+    APTR gic_key = DT_FindByPHandle(DeviceTreeBase, root_key, gic_phandle);
     if (gic_key == NULL)
     {
-        Kprintf("[gic] %s: Failed to find GIC key for handle %08lx\n", __func__, gic_phandle);
+        Kprintf("[gic] %s: Failed to find GIC key for handle %08lx\n", (ULONG)__func__, gic_phandle);
         DT_CloseKey(root_key);
         return -GIC_ERROR;
     }
@@ -56,35 +143,35 @@ static int gic400_parse_devicetree(struct GIC_Base *gicBase)
     // TODO this is awful. rework DT_TranslateAddress
 
     const APTR parent_key = DT_GetParent(gic_key);
-    const ULONG address_cells_parent = DT_GetPropertyValueULONG(parent_key, "#address-cells", 1, FALSE);
-    const ULONG size_cells_parent = DT_GetPropertyValueULONG(parent_key, "#size-cells", 1, FALSE);
+    const ULONG address_cells_parent = DT_GetPropertyValueULONG(DeviceTreeBase, parent_key, "#address-cells", 1, FALSE);
+    const ULONG size_cells_parent = DT_GetPropertyValueULONG(DeviceTreeBase, parent_key, "#size-cells", 1, FALSE);
     const ULONG cells_per_record = address_cells_parent + size_cells_parent;
 
     const ULONG *value = DT_GetPropValue(DT_FindProperty(gic_key, (CONST_STRPTR) "reg"));
 
     gicBase->gic_base_distributor = (APTR)(ULONG)DT_GetNumber(value, address_cells_parent);
-    DT_TranslateAddress(&gicBase->gic_base_distributor, parent_key);
+    DT_TranslateAddress(DeviceTreeBase, &gicBase->gic_base_distributor, parent_key);
     if (gicBase->gic_base_distributor == NULL)
     {
-        Kprintf("[gic] %s: Failed to get Distributor base address for GIC\n", __func__);
+        Kprintf("[gic] %s: Failed to get Distributor base address for GIC\n", (ULONG)__func__);
         DT_CloseKey(gic_key);
         DT_CloseKey(root_key);
         return -GIC_ERROR;
     }
 
     gicBase->gic_base_cpuif = (APTR)(ULONG)DT_GetNumber(value + cells_per_record, address_cells_parent);
-    DT_TranslateAddress(&gicBase->gic_base_cpuif, parent_key);
+    DT_TranslateAddress(DeviceTreeBase, &gicBase->gic_base_cpuif, parent_key);
     if (gicBase->gic_base_cpuif == NULL)
     {
-        Kprintf("[gic] %s: Failed to get CPU Interface base address for GIC\n", __func__);
+        Kprintf("[gic] %s: Failed to get CPU Interface base address for GIC\n", (ULONG)__func__);
         DT_CloseKey(gic_key);
         DT_CloseKey(root_key);
         return -GIC_ERROR;
     }
 
-    Kprintf("[gic] %s: compatible: %s\n", __func__, gic_compatible);
-    Kprintf("[gic] %s: Distributor register base: %08lx\n", __func__, gicBase->gic_base_distributor);
-    Kprintf("[gic] %s: CPU Interface register base: %08lx\n", __func__, gicBase->gic_base_cpuif);
+    Kprintf("[gic] %s: compatible: %s\n", (ULONG)__func__, (ULONG)gic_compatible);
+    Kprintf("[gic] %s: Distributor register base: %08lx\n", (ULONG)__func__, (ULONG)gicBase->gic_base_distributor);
+    Kprintf("[gic] %s: CPU Interface register base: %08lx\n", (ULONG)__func__, (ULONG)gicBase->gic_base_cpuif);
 
     // We're done with the device tree
     DT_CloseKey(gic_key);
@@ -98,6 +185,8 @@ static int gic400_parse_devicetree(struct GIC_Base *gicBase)
  */
 int gic400_init(struct GIC_Base *gicBase)
 {
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+
     if (!gicBase)
         return -GIC_ERROR;
 
@@ -117,7 +206,7 @@ int gic400_init(struct GIC_Base *gicBase)
     gicBase->handlers = AllocMem(handler_bytes, MEMF_CLEAR);
     if (!gicBase->handlers)
     {
-        Kprintf("[gic] %s: Failed to allocate handler table (%lu bytes)\n", __func__, handler_bytes);
+        Kprintf("[gic] %s: Failed to allocate handler table (%lu bytes)\n", (ULONG)__func__, handler_bytes);
         return -GIC_ERROR;
     }
 
@@ -146,7 +235,7 @@ int gic400_init(struct GIC_Base *gicBase)
 
     gicBase->dispatcher_interrupt.is_Node.ln_Type = NT_INTERRUPT;
     gicBase->dispatcher_interrupt.is_Node.ln_Pri = 100;
-    gicBase->dispatcher_interrupt.is_Node.ln_Name = gic_dispatcher_name;
+    gicBase->dispatcher_interrupt.is_Node.ln_Name = (char *)gic_dispatcher_name;
     gicBase->dispatcher_interrupt.is_Data = gicBase;
     gicBase->dispatcher_interrupt.is_Code = (APTR)gic400_exec_dispatcher;
     AddIntServer(INTB_EXTER, &gicBase->dispatcher_interrupt);
@@ -167,6 +256,8 @@ void gic400_shutdown(struct GIC_Base *gicBase)
 {
     if (!gicBase)
         return;
+
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
 
     Disable();
 
@@ -302,13 +393,13 @@ static int gic400_validate_cpu_target(const char *caller, ULONG irq, UBYTE cpu)
 {
     if (cpu >= 8)
     {
-        Kprintf("[gic] %s: CPU index %lu is out of range\n", caller, (ULONG)cpu);
+        Kprintf("[gic] %s: CPU index %lu is out of range\n", (ULONG)caller, (ULONG)cpu);
         return -GIC_ERROR;
     }
 
     if (irq < 32)
     {
-        Kprintf("[gic] %s: IRQ %lu targets SGI/PPI and cannot be rerouted\n", caller, irq);
+        Kprintf("[gic] %s: IRQ %lu targets SGI/PPI and cannot be rerouted\n", (ULONG)caller, irq);
         return -GIC_ERROR;
     }
 
@@ -344,7 +435,7 @@ LONG QueryIntRoute(ULONG irq asm("d0"), struct GIC_Base *gicBase asm("a6"))
         return -GIC_ERROR;
     if (irq < 32)
     {
-        Kprintf("[gic] %s: IRQ %lu targets SGI/PPI and cannot be rerouted\n", __func__, irq);
+        Kprintf("[gic] %s: IRQ %lu targets SGI/PPI and cannot be rerouted\n", (ULONG)__func__, irq);
         return -GIC_ERROR;
     }
 
@@ -391,7 +482,7 @@ ULONG SetPriorityMask(UBYTE mask asm("d0"), struct GIC_Base *gicBase asm("a6"))
 {
     if (!gicBase)
     {
-        Kprintf("[gic] %s: NULL GIC base\n", __func__);
+        Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__);
         return -GIC_ERROR;
     }
 
@@ -404,7 +495,7 @@ LONG GetPriorityMask(struct GIC_Base *gicBase asm("a6"))
 {
     if (!gicBase)
     {
-        Kprintf("[gic] %s: NULL GIC base\n", __func__);
+        Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__);
         return -GIC_ERROR;
     }
 
@@ -418,7 +509,7 @@ LONG GetRunningPriority(struct GIC_Base *gicBase asm("a6"))
 {
     if (!gicBase)
     {
-        Kprintf("[gic] %s: NULL GIC base\n", __func__);
+        Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__);
         return -GIC_ERROR;
     }
 
@@ -430,7 +521,7 @@ LONG GetHighestPending(struct GIC_Base *gicBase asm("a6"))
 {
     if (!gicBase)
     {
-        Kprintf("[gic] %s: NULL GIC base\n", __func__);
+        Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__);
         return -GIC_ERROR;
     }
 
@@ -441,12 +532,12 @@ LONG GetControllerInfo(struct GICInfo *info asm("a1"), struct GIC_Base *gicBase 
 {
     if (!gicBase)
     {
-        Kprintf("[gic] %s: NULL GIC base\n", __func__);
+        Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__);
         return -GIC_ERROR;
     }
     if (!info)
     {
-        Kprintf("[gic] %s: NULL info pointer\n", __func__);
+        Kprintf("[gic] %s: NULL info pointer\n", (ULONG)__func__);
         return -GIC_ERROR;
     }
 
@@ -469,6 +560,8 @@ LONG GetControllerInfo(struct GICInfo *info asm("a1"), struct GIC_Base *gicBase 
  */
 static inline void gic400_call_interrupt(struct Interrupt *interrupt, ULONG irq)
 {
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+
     if (interrupt == NULL || interrupt->is_Code == NULL)
         return;
 
@@ -511,7 +604,7 @@ static ULONG gic400_exec_dispatcher(register struct GIC_Base *gicBase asm("a1"))
     struct Interrupt *interrupt = gicBase->handlers[irq];
     if (interrupt)
     {
-        KprintfH("[gic] Invoking handler for IRQ %ld\n", irq);
+        Kprintf("[gic] Invoking handler for IRQ %ld\n", irq);
         gic400_call_interrupt(interrupt, irq);
     }
 
@@ -540,6 +633,8 @@ ULONG AddIntServerEx(ULONG irq asm("d0"), UBYTE priority asm("d1"), BOOL edge as
     {
         return -GIC_ERROR;
     }
+
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
 
     Disable();
 
@@ -584,6 +679,8 @@ ULONG RemIntServerEx(ULONG irq asm("d0"), struct Interrupt *interrupt asm("a1"),
         return -GIC_ERROR;
     }
 
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+    
     Disable();
 
     struct Interrupt *current = gicBase->handlers[irq];
