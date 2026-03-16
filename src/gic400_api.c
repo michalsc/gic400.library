@@ -147,7 +147,7 @@ static int gic400_parse_devicetree(struct GIC_Base *gicBase)
         return -GIC_ERROR;
     }
 
-    const ULONG gic_phandle = DT_GetPropertyValueULONG(DeviceTreeBase, root_key, "interrupt-controller", 1, FALSE);
+    const ULONG gic_phandle = DT_GetPropertyValueULONG(DeviceTreeBase, root_key, "interrupt-parent", 1, FALSE);
 
     APTR gic_key = DT_FindByPHandle(DeviceTreeBase, root_key, gic_phandle);
     if (gic_key == NULL)
