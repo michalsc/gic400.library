@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "gic400_private.h"
 
+#define DDISPATCH(x) /* x */
+#define DINFO(x) x
+#define DERROR(x) x
+
 /* gicd_print_info: Log distributor ID and capability registers.
  * Args: none.
  * Returns: void.
@@ -8,15 +12,15 @@
 void gicd_print_info(struct GIC_Base *gicBase)
 {
     ULONG iidr = gicBase->gicd_iidr;
-    Kprintf("[gic] Distributor: Implementer=0x%03lx, Revision=%ld, Variant=%ld, ProductID=0x%02lx\n",
-            GICD_IIDR_IMPLEMENTER(iidr), GICD_IIDR_REVISION(iidr), GICD_IIDR_VARIANT(iidr), GICD_IIDR_PRODUCT_ID(iidr));
+    DINFO(Kprintf("[gic] Distributor: Implementer=0x%03lx, Revision=%ld, Variant=%ld, ProductID=0x%02lx\n",
+            GICD_IIDR_IMPLEMENTER(iidr), GICD_IIDR_REVISION(iidr), GICD_IIDR_VARIANT(iidr), GICD_IIDR_PRODUCT_ID(iidr)));
 
     ULONG typer = gicBase->gicd_typer;
-    Kprintf("[gic] Distributor: ITLinesNumber=%ld, CPUNumber=%ld, SecurityExtensions=%ld, LSPIs=%ld\n",
+    DINFO(Kprintf("[gic] Distributor: ITLinesNumber=%ld, CPUNumber=%ld, SecurityExtensions=%ld, LSPIs=%ld\n",
             (GICD_TYPER_IT_LINES_NUMBER(typer) + 1) * 32,
             GICD_TYPER_CPUS_NUMBER(typer) + 1,
             GICD_TYPER_SECURITY_EXTN(typer),
-            GICD_TYPER_LSPI(typer));
+            GICD_TYPER_LSPI(typer)));
 }
 
 /* gicd_enable_group: Enable forwarding of pending interrupts from the Distributor to the CPU interface
@@ -258,6 +262,6 @@ void gicd_set_trigger(struct GIC_Base *gicBase, ULONG irq, BOOL edge)
     BOOL is_edge = ((reg >> bit_offset) & 0x02) != 0;
     if (is_edge != edge)
     {
-        Kprintf("[gic] Failed to set GICD IRQ %lu trigger to %s\n", irq, edge ? (ULONG)"edge" : (ULONG)"level");
+        DERROR(Kprintf("[gic] Failed to set GICD IRQ %lu trigger to %s\n", irq, edge ? (ULONG)"edge" : (ULONG)"level"));
     }
 }

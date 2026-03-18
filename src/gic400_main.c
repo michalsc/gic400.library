@@ -17,6 +17,10 @@ int __attribute__((used, no_reorder)) doNotExecute()
     return -1;
 }
 
+#define DDISPATCH(x) /* x */
+#define DINFO(x) x
+#define DERROR(x) x
+
 extern const UBYTE endOfCode;
 static const char libraryName[] = LIBRARY_NAME;
 static const char libraryIdString[] = LIBRARY_IDSTRING;
@@ -70,7 +74,7 @@ struct Library *LibInit(struct Library *base asm("d0"), ULONG seglist asm("a0"),
     int res = gic400_init(gicBase);
     if (res != 0)
     {
-        Kprintf("[gic] %s: Failed to initialize GIC-400 library\n", (ULONG)__func__);
+        DERROR(Kprintf("[gic] %s: Failed to initialize GIC-400 library\n", (ULONG)__func__));
         
         /* Calculate size of library base and deallocate memory */
         ULONG size = gicBase->libNode.lib_NegSize + gicBase->libNode.lib_PosSize;

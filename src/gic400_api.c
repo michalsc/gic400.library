@@ -9,23 +9,27 @@ static const char gic_dispatcher_name[] = "ARM GIC-400 dispatcher";
 
 static ULONG gic400_exec_dispatcher(register struct GIC_Base *gicBase asm("a1"));
 
+#define DDISPATCH(x) /* x */
+#define DINFO(x) x
+#define DERROR(x) x
+
 static int gic400_validate_irq(struct GIC_Base *gicBase, ULONG irq)
 {
     if (!gicBase)
     {
-        Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__);
+        DERROR(Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__));
         return -GIC_ERROR;
     }
 
     if (gicBase->max_irqs == 0)
     {
-        Kprintf("[gic] %s: controller reports zero IRQs\n", (ULONG)__func__);
+        DERROR(Kprintf("[gic] %s: controller reports zero IRQs\n", (ULONG)__func__));
         return -GIC_ERROR;
     }
 
     if (irq >= gicBase->max_irqs)
     {
-        Kprintf("[gic] %s: IRQ %lu is out of range (max %lu)\n", (ULONG)__func__, irq, gicBase->max_irqs);
+        DERROR(Kprintf("[gic] %s: IRQ %lu is out of range (max %lu)\n", (ULONG)__func__, irq, gicBase->max_irqs));
         return -GIC_ERROR;
     }
 
@@ -143,7 +147,7 @@ static int gic400_parse_devicetree(struct GIC_Base *gicBase)
     APTR root_key = DT_OpenKey((CONST_STRPTR) "/");
     if (root_key == NULL)
     {
-        Kprintf("[gic] %s: Failed to open root key\n", (ULONG)__func__);
+        DERROR(Kprintf("[gic] %s: Failed to open root key\n", (ULONG)__func__));
         return -GIC_ERROR;
     }
 
@@ -152,7 +156,7 @@ static int gic400_parse_devicetree(struct GIC_Base *gicBase)
     APTR gic_key = DT_FindByPHandle(DeviceTreeBase, root_key, gic_phandle);
     if (gic_key == NULL)
     {
-        Kprintf("[gic] %s: Failed to find GIC key for handle %08lx\n", (ULONG)__func__, gic_phandle);
+        DERROR(Kprintf("[gic] %s: Failed to find GIC key for handle %08lx\n", (ULONG)__func__, gic_phandle));
         DT_CloseKey(root_key);
         return -GIC_ERROR;
     }
@@ -162,7 +166,7 @@ static int gic400_parse_devicetree(struct GIC_Base *gicBase)
     // gic_compatible should begin with "arm,gic-400"
     if (gic_compatible == NULL || _strncmp((const char *)gic_compatible, "arm,gic-400", 11) != 0)
     {
-        Kprintf("[gic] %s: Incompatible GIC compatible string: %s\n", (ULONG)__func__, (ULONG)gic_compatible);
+        DERROR(Kprintf("[gic] %s: Incompatible GIC compatible string: %s\n", (ULONG)__func__, (ULONG)gic_compatible));
         DT_CloseKey(gic_key);
         DT_CloseKey(root_key);
         return -GIC_ERROR;
@@ -181,7 +185,7 @@ static int gic400_parse_devicetree(struct GIC_Base *gicBase)
     DT_TranslateAddress(DeviceTreeBase, &gicBase->gic_base_distributor, parent_key);
     if (gicBase->gic_base_distributor == NULL)
     {
-        Kprintf("[gic] %s: Failed to get Distributor base address for GIC\n", (ULONG)__func__);
+        DERROR(Kprintf("[gic] %s: Failed to get Distributor base address for GIC\n", (ULONG)__func__));
         DT_CloseKey(gic_key);
         DT_CloseKey(root_key);
         return -GIC_ERROR;
@@ -191,15 +195,15 @@ static int gic400_parse_devicetree(struct GIC_Base *gicBase)
     DT_TranslateAddress(DeviceTreeBase, &gicBase->gic_base_cpuif, parent_key);
     if (gicBase->gic_base_cpuif == NULL)
     {
-        Kprintf("[gic] %s: Failed to get CPU Interface base address for GIC\n", (ULONG)__func__);
+        DERROR(Kprintf("[gic] %s: Failed to get CPU Interface base address for GIC\n", (ULONG)__func__));
         DT_CloseKey(gic_key);
         DT_CloseKey(root_key);
         return -GIC_ERROR;
     }
 
-    Kprintf("[gic] %s: compatible: %s\n", (ULONG)__func__, (ULONG)gic_compatible);
-    Kprintf("[gic] %s: Distributor register base: %08lx\n", (ULONG)__func__, (ULONG)gicBase->gic_base_distributor);
-    Kprintf("[gic] %s: CPU Interface register base: %08lx\n", (ULONG)__func__, (ULONG)gicBase->gic_base_cpuif);
+    DINFO(Kprintf("[gic] %s: compatible: %s\n", (ULONG)__func__, (ULONG)gic_compatible));
+    DINFO(Kprintf("[gic] %s: Distributor register base: %08lx\n", (ULONG)__func__, (ULONG)gicBase->gic_base_distributor));
+    DINFO(Kprintf("[gic] %s: CPU Interface register base: %08lx\n", (ULONG)__func__, (ULONG)gicBase->gic_base_cpuif));
 
     // We're done with the device tree
     DT_CloseKey(gic_key);
@@ -234,7 +238,7 @@ int gic400_init(struct GIC_Base *gicBase)
     gicBase->handlers = AllocMem(handler_bytes, MEMF_CLEAR);
     if (!gicBase->handlers)
     {
-        Kprintf("[gic] %s: Failed to allocate handler table (%lu bytes)\n", (ULONG)__func__, handler_bytes);
+        DERROR(Kprintf("[gic] %s: Failed to allocate handler table (%lu bytes)\n", (ULONG)__func__, handler_bytes));
         return -GIC_ERROR;
     }
 
@@ -267,7 +271,7 @@ int gic400_init(struct GIC_Base *gicBase)
     gicBase->dispatcher_interrupt.is_Data = gicBase;
     gicBase->dispatcher_interrupt.is_Code = (APTR)gic400_exec_dispatcher;
     AddIntServer(INTB_EXTER, &gicBase->dispatcher_interrupt);
-    Kprintf("[gic] dispatcher installed on INTB_EXTER\n");
+    DINFO(Kprintf("[gic] dispatcher installed on INTB_EXTER\n"));
     Enable();
 
     return 0;
@@ -298,13 +302,13 @@ void gic400_shutdown(struct GIC_Base *gicBase)
         {
             gic400_disable_irq(gicBase, irq);
             gicBase->handlers[irq] = NULL;
-            Kprintf("[gic] warning: removed handler for IRQ %ld during shutdown\n", irq);
+            DINFO(Kprintf("[gic] warning: removed handler for IRQ %ld during shutdown\n", irq));
         }
     }
     gicBase->handler_count = 0;
 
     Enable();
-    Kprintf("[gic] dispatcher removed from INTB_EXTER\n");
+    DINFO(Kprintf("[gic] dispatcher removed from INTB_EXTER\n"));
 
     if (gicBase->handlers)
     {
@@ -322,7 +326,7 @@ void gic400_shutdown(struct GIC_Base *gicBase)
  */
 static void gic400_enable_irq(struct GIC_Base *gicBase, ULONG irq, UBYTE priority, BOOL edge)
 {
-    Kprintf("[gic] Enabling IRQ %ld with priority %lu\n", irq, priority);
+    DINFO(Kprintf("[gic] Enabling IRQ %ld with priority %lu\n", irq, priority));
 
     gicd_disable_irq(gicBase, irq); // disable IRQ before configuration
 
@@ -338,7 +342,7 @@ static void gic400_enable_irq(struct GIC_Base *gicBase, ULONG irq, UBYTE priorit
  */
 static void gic400_disable_irq(struct GIC_Base *gicBase, ULONG irq)
 {
-    Kprintf("[gic] Disabling IRQ %ld\n", irq);
+    DINFO(Kprintf("[gic] Disabling IRQ %ld\n", irq));
 
     gicd_disable_irq(gicBase, irq);       // disable IRQ
     gicd_set_cpu(gicBase, irq, 0, FALSE); // unroute from CPU0
@@ -421,13 +425,13 @@ static int gic400_validate_cpu_target(const char *caller, ULONG irq, UBYTE cpu)
 {
     if (cpu >= 8)
     {
-        Kprintf("[gic] %s: CPU index %lu is out of range\n", (ULONG)caller, (ULONG)cpu);
+        DERROR(Kprintf("[gic] %s: CPU index %lu is out of range\n", (ULONG)caller, (ULONG)cpu));
         return -GIC_ERROR;
     }
 
     if (irq < 32)
     {
-        Kprintf("[gic] %s: IRQ %lu targets SGI/PPI and cannot be rerouted\n", (ULONG)caller, irq);
+        DERROR(Kprintf("[gic] %s: IRQ %lu targets SGI/PPI and cannot be rerouted\n", (ULONG)caller, irq));
         return -GIC_ERROR;
     }
 
@@ -463,7 +467,7 @@ LONG QueryIntRoute(ULONG irq asm("d0"), struct GIC_Base *gicBase asm("a6"))
         return -GIC_ERROR;
     if (irq < 32)
     {
-        Kprintf("[gic] %s: IRQ %lu targets SGI/PPI and cannot be rerouted\n", (ULONG)__func__, irq);
+        DERROR(Kprintf("[gic] %s: IRQ %lu targets SGI/PPI and cannot be rerouted\n", (ULONG)__func__, irq));
         return -GIC_ERROR;
     }
 
@@ -510,7 +514,7 @@ ULONG SetPriorityMask(UBYTE mask asm("d0"), struct GIC_Base *gicBase asm("a6"))
 {
     if (!gicBase)
     {
-        Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__);
+        DERROR(Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__));
         return -GIC_ERROR;
     }
 
@@ -523,7 +527,7 @@ LONG GetPriorityMask(struct GIC_Base *gicBase asm("a6"))
 {
     if (!gicBase)
     {
-        Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__);
+        DERROR(Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__));
         return -GIC_ERROR;
     }
 
@@ -537,7 +541,7 @@ LONG GetRunningPriority(struct GIC_Base *gicBase asm("a6"))
 {
     if (!gicBase)
     {
-        Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__);
+        DERROR(Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__));
         return -GIC_ERROR;
     }
 
@@ -549,7 +553,7 @@ LONG GetHighestPending(struct GIC_Base *gicBase asm("a6"))
 {
     if (!gicBase)
     {
-        Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__);
+        DERROR(Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__));
         return -GIC_ERROR;
     }
 
@@ -560,12 +564,12 @@ LONG GetControllerInfo(struct GICInfo *info asm("a1"), struct GIC_Base *gicBase 
 {
     if (!gicBase)
     {
-        Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__);
+        DERROR(Kprintf("[gic] %s: NULL GIC base\n", (ULONG)__func__));
         return -GIC_ERROR;
     }
     if (!info)
     {
-        Kprintf("[gic] %s: NULL info pointer\n", (ULONG)__func__);
+        DERROR(Kprintf("[gic] %s: NULL info pointer\n", (ULONG)__func__));
         return -GIC_ERROR;
     }
 
@@ -632,7 +636,7 @@ static ULONG gic400_exec_dispatcher(register struct GIC_Base *gicBase asm("a1"))
     struct Interrupt *interrupt = gicBase->handlers[irq];
     if (interrupt)
     {
-        Kprintf("[gic] Invoking handler for IRQ %ld\n", irq);
+        DDISPATCH(Kprintf("[gic] Invoking handler for IRQ %ld\n", irq));
         gic400_call_interrupt(interrupt, irq);
     }
 
@@ -654,7 +658,7 @@ ULONG AddIntServerEx(ULONG irq asm("d0"), UBYTE priority asm("d1"), BOOL edge as
         return -GIC_ERROR;
     if (!interrupt || !interrupt->is_Code)
     {
-        Kprintf("[gic] Invalid interrupt server for IRQ %ld\n", irq);
+        DERROR(Kprintf("[gic] Invalid interrupt server for IRQ %ld\n", irq));
         return -GIC_ERROR;
     }
     if (gic400_validate_irq(gicBase, irq) < 0)
@@ -671,13 +675,13 @@ ULONG AddIntServerEx(ULONG irq asm("d0"), UBYTE priority asm("d1"), BOOL edge as
     {
         if (existing == interrupt)
         {
-            Kprintf("[gic] IRQ %ld is already registered\n", irq);
+            DINFO(Kprintf("[gic] IRQ %ld is already registered\n", irq));
             Enable();
             return 0;
         }
 
         Enable();
-        Kprintf("[gic] IRQ %ld already has a different server registered\n", irq);
+        DERROR(Kprintf("[gic] IRQ %ld already has a different server registered\n", irq));
         return -GIC_ERROR;
     }
 
@@ -699,7 +703,7 @@ ULONG RemIntServerEx(ULONG irq asm("d0"), struct Interrupt *interrupt asm("a1"),
         return -GIC_ERROR;
     if (!interrupt)
     {
-        Kprintf("[gic] Invalid interrupt server for IRQ %ld\n", irq);
+        DERROR(Kprintf("[gic] Invalid interrupt server for IRQ %ld\n", irq));
         return -GIC_ERROR;
     }
     if (gic400_validate_irq(gicBase, irq) < 0)
@@ -714,13 +718,13 @@ ULONG RemIntServerEx(ULONG irq asm("d0"), struct Interrupt *interrupt asm("a1"),
     struct Interrupt *current = gicBase->handlers[irq];
     if (!current)
     {
-        Kprintf("[gic] No handler registered for IRQ %ld\n", irq);
+        DERROR(Kprintf("[gic] No handler registered for IRQ %ld\n", irq));
         Enable();
         return -GIC_ERROR;
     }
     if (current != interrupt)
     {
-        Kprintf("[gic] IRQ %ld registered with a different server\n", irq);
+        DERROR(Kprintf("[gic] IRQ %ld registered with a different server\n", irq));
         Enable();
         return -GIC_ERROR;
     }
