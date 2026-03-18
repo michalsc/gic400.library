@@ -8,6 +8,10 @@ include(cmake/sfdc.cmake)
 get_verstring(VERSTRING)
 sfdc(sfd/gic400.sfd)
 
+# gic400 contains also a non-generated header in its source dir, include it
+# in the library object.
+target_include_directories(gic400 INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 if(NOT TARGET devicetree)
     add_subdirectory(devicetree.resource EXCLUDE_FROM_ALL)
 endif()
