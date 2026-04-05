@@ -626,7 +626,7 @@ static ULONG gic400_exec_dispatcher(register struct GIC_Base *gicBase asm("a1"))
 {
     if (!gicBase)
     {
-        KprintfH("[gic] %s: NULL GIC base\n", __func__);
+        DDISPATCH(KprintfH("[gic] %s: NULL GIC base\n", (ULONG)__func__));
         return 0;
     }
 
@@ -635,7 +635,7 @@ static ULONG gic400_exec_dispatcher(register struct GIC_Base *gicBase asm("a1"))
 
     if (irq == 0x3FF || irq == 0x3FE)
     {
-        KprintfH("[gic] Spurious interrupt received (IAR=0x%08lx)\n", iar);
+        DDISPATCH(KprintfH("[gic] Spurious interrupt received (IAR=0x%08lx)\n", iar));
         return 0; // No pending interrupts
     }
 
